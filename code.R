@@ -18,7 +18,7 @@ summary(road.segments)        # Resumen de los segmentos de calle
 
 
 # Cargar los datos de casos y bombas
-cases <- fatalities          # Datos de muertes por cólera
+cases <- fatalities        # Datos de muertes por cólera
 pumps <- pumps                # Ubicación de las bombas de agua
 
 
