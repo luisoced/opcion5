@@ -144,5 +144,5 @@ pumps_buffer_geo <- st_transform(pumps_buffer, crs = 4326)
 leaflet() %>%
   addTiles() %>%
   addCircleMarkers(data = pumps_sf, color = "blue", radius = 5, label = ~paste("Bomba", id)) %>%
-  addCircleMarkers(data = cases_sf, color = "red", radius = 3, label = ~paste("Caso")) %>%
+  addCircleMarkers(data = cases_sf, color = "yellow", radius = 3, label = ~paste("Caso")) %>%
   addPolygons(data = pumps_buffer_geo, color = "green", weight = 2, fillOpacity = 0.2, label = ~paste("Buffer bomba", id))
