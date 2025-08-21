@@ -1,148 +1,151 @@
-library(tidyverse)
-library(sf)
-library(ggplot2)
-library(cholera)
-library(dplyr)
-library(leaflet)
-library(leaflet.extras)
-library(osrm)
+# Clase 1 - Analisis exploratorio de datos espaciales
+# Actividad práctica
+# Mapa de John Snow (1854) - Datos reales (paquete cholera)
 
+# Cargar librerías
 
-data(package = "cholera")
+library(tidyverse)       # Visualización
 
-head(fatalities)              # Muestra las primeras filas de las muertes por cólera
-plot(pumps)                # Grafica la ubicación de las bombas
-summary(road.segments)        # Resumen de los segmentos de calle
+library(sf)              # Manejo de datos espaciales
+library(leaflet)         # Visualización interactiva
+library(leaflet.extras)  # Funcionalidades extras de leaflet
 
+library(cholera)         # Datos y funciones de John Snow
 
+library(osrm)            # Consulta de rutas y isocronas
 
+# 1. Cargar datos reales --------------------
 
-# Cargar los datos de casos y bombas
-cases <- fatalities        # Datos de muertes por cólera
-pumps <- pumps                # Ubicación de las bombas de agua
+street <- cholera::roads
+cases  <- cholera::fatalities   # casos de muertes
+pumps  <- cholera::pumps        # bombas de agua
 
+# Convertir a sf con CRS WGS84 (EPSG:4326)
+cases_sf  <- st_as_sf(cases, coords = c("lon", "lat"), crs = 4326)
+pumps_sf  <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
+street_sf <- street %>%
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+  group_by(street) %>%
+  dplyr::summarize(do_union = FALSE) %>%  # do_union=FALSE doesn't work as well
+  st_cast("LINESTRING")
 
+# 2. Visualización básica -----------------------------
 
-# Convertir casos a objeto sf
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 4326)
-
-# Convertir bombas a objeto sf
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
-
-
-
-
-# Convertir a objetos espaciales usando lon/lat
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 4326)
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
-
-# Crear el gráfico
 ggplot() +
-  geom_sf(data = cases_sf, color = "red", size = 1, alpha = 0.6) +
-  geom_sf(data = pumps_sf, color = "blue", shape = 17, size = 2) +
+  geom_sf(data = street_sf, color = "grey40", size = 1, alpha = 0.6) +
+  geom_sf(data = cases_sf, color = "tomato2", size = 1, alpha = 0.6) +
+  geom_sf(data = pumps_sf, color = "darkblue", size = 3, shape = 19) +
+  geom_sf_text(data = pumps_sf, aes(label = id), color = "darkblue",
+               size = 3, nudge_y = 0.0005) +
   labs(
-    title = "Brote de cólera en Londres (1854)",
-    subtitle = "Visualización de muertes y ubicación de bombas de agua según el mapa de John Snow",
-    caption = "Fuente: Paquete {cholera} en R, basado en datos históricos de Dodson y Tobler"
+    title = "Mapa de casos de cólera - Londres 1854",
+    subtitle = "Datos reales de John Snow (paquete cholera)",
+    caption = "Fuente: paquete cholera en R"
   ) +
-  theme_minimal()
+  theme_void()
 
-# Transforma los datos a una proyección métrica (EPSG:3857) para poder calcular distancias en metros.
+# 3. Conteo de casos en un radio de 100 metros de cada bomba ------------
 
+# Transformar a proyección métrica
+cases_m <- st_transform(cases_sf, 27700)
+pumps_m <- st_transform(pumps_sf, 27700)
 
-
-# Convertir a objetos espaciales con WGS84
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 27700)
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 27700)
-
-# Transformar a proyección métrica (EPSG:3857)
-cases_m <- st_transform(cases_sf, crs =27700)
-pumps_m <- st_transform(pumps_sf, crs =27700)
-
-
-
-# Generar buffers de 100 metros alrededor de cada bomba
+# Buffers de 100 m
 pumps_buffer <- st_buffer(pumps_m, dist = 100)
 
-# 8_Calcula cuántos casos hay dentro del buffer de cada bomba.
-#¿Cuál bomba tiene más casos cercanos?
+# Conteo por buffer
+conteo <- st_intersects(pumps_buffer, cases_m) %>%
+  lengths() %>%
+  data.frame(Bomba = pumps$id, Casos = .)
 
+conteo
 
-# 1. Convertir a objetos espaciales
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 4326)
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
+# 4. Visualización interactiva --------------------------------
 
-# 2. Transformar a proyección métrica
-cases_m <- st_transform(cases_sf, crs = 3857)
-pumps_m <- st_transform(pumps_sf, crs = 3857)
-
-# 3. Crear buffers de 100 metros
-pumps_buffer <- st_buffer(pumps_m, dist = 100)
-
-# 4. Identificar qué casos caen dentro de cada buffer
-cases_in_buffer <- st_join(cases_m, pumps_buffer, join = st_within)
-
-# 5. Contar casos por bomba
-cases_count <- cases_in_buffer %>%
-  group_by(id) %>%  # 'id' es el identificador de cada bomba
-  summarise(casos = n()) %>%
-  arrange(desc(casos))
-
-# 6. Mostrar resultados
-print(cases_count)
-
-
-#
-
-
-
-# Convertir a objetos espaciales
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 4326)
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
-
-# Transformar a proyección métrica para medir distancias en metros
-cases_m <- st_transform(cases_sf, crs = 3857)
-pumps_m <- st_transform(pumps_sf, crs = 3857)
-
-# Crear buffers de 100 metros alrededor de cada bomba
-pumps_buffer <- st_buffer(pumps_m, dist = 100)
-
-# Identificar qué casos caen dentro de cada buffer
-cases_in_buffer <- st_join(cases_m, pumps_buffer, join = st_within)
-
-# Contar casos por bomba
-tabla_final <- cases_in_buffer %>%
-  group_by(id) %>%
-  summarise(`Casos dentro del buffer` = n()) %>%
-  rename(`ID de bomba` = id) %>%
-  arrange(desc(`Casos dentro del buffer`))
-
-# Mostrar la tabla
-final <- print(tabla_final)
-
-
-# 
-#
-
-
-
-# Convertir a objetos espaciales
-cases_sf <- st_as_sf(fatalities, coords = c("lon", "lat"), crs = 4326)
-pumps_sf <- st_as_sf(pumps, coords = c("lon", "lat"), crs = 4326)
-
-# Transformar a proyección métrica para crear buffers
-cases_m <- st_transform(cases_sf, crs = 4326)
-pumps_m <- st_transform(pumps_sf, crs = 4326)
-
-# Crear buffers de 100 metros
-pumps_buffer <- st_buffer(pumps_m, dist = 100)
-
-# Volver a CRS geográfico para Leaflet
-pumps_buffer_geo <- st_transform(pumps_buffer, crs = 4326)
-
-# Crear mapa
 leaflet() %>%
+  addProviderTiles(provider = "OpenStreetMap") %>%
   addTiles() %>%
-  addCircleMarkers(data = pumps_sf, color = "blue", radius = 5, label = ~paste("Bomba", id)) %>%
-  addCircleMarkers(data = cases_sf, color = "red", radius = 3, label = ~paste("Caso")) %>%
-  addPolygons(data = pumps_buffer_geo, color = "green", weight = 2, fillOpacity = 0.2, label = ~paste("Buffer bomba", id))
+  addCircleMarkers(data = cases_sf, color = "tomato",
+                   radius = 3, label = ~paste("Caso"),
+                   group = "Casos") %>%
+  addCircleMarkers(data = pumps_sf, color = "darkblue", radius = 6,
+                   label = ~street,  # Mostrar la calle
+                   popup = ~paste("Bomba en:", street),
+                   group = "pumps") %>%
+  addPolygons(data = st_transform(pumps_buffer, 4326),
+              color = "darkblue", weight = 1, fillOpacity = 0.2,
+              label = ~paste("Buffer 100m"),
+              group = "Buffers 100m") %>%
+  addLegend(position = "bottomright",
+            colors = c("tomato", "darkblue"),
+            labels = c("Casos", "Bombas de agua"),
+            title = "Leyenda") |>
+  addLayersControl(
+    overlayGroups = c("Casos", "pumps", "Buffers 100m"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addSearchFeatures(
+    targetGroups = "pumps",       # Grupo de bombas
+    options = searchFeaturesOptions(
+      propertyName = "street",    # Campo por el que se busca
+      zoom = 18,
+      openPopup = TRUE,
+      firstTipSubmit = TRUE,
+      autoCollapse = TRUE,
+      hideMarkerOnCollapse = TRUE
+    )
+  )
+
+
+# 5. Cálculo de Isocronas ----------------------
+
+# Asegurarse de que los datos estén en WGS84
+origen <- pumps_sf |> filter(id == 7)     # bomba 7 (Broad Street)
+destino <- cases_sf[1, ]    # caso 1
+
+# Cálculo de ruta con OSRM
+ruta <- osrmRoute(src = origen, dst = destino)
+
+# Cálculo de isocrona
+iso <- osrmIsochrone(loc = origen,
+                     breaks = c(1:5),
+                     osrm.profile = "foot")
+
+# Mapeamos con Isocronas
+
+pal <- colorFactor("viridis", domain = iso$isomax, ordered = TRUE)
+
+leaflet() %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  addPolygons(data = iso, color = ~pal(isomax), fillOpacity = 0.2,
+              label = ~paste("De ", isomin, "a", isomax, "minutos"),
+              group = "Isócrona") %>%
+  addCircleMarkers(data = cases_sf, color = "tomato",
+                   radius = 1, opacity = 0.3,
+                   label = ~paste("Caso"),
+                   group = "Casos") %>%
+  addCircleMarkers(data = pumps_sf, color = "darkblue", radius = 6,
+                   label = ~street,
+                   popup = ~paste("Bomba en:", street),
+                   group = "pumps") %>%
+  addLegend(position = "bottomright",
+            colors = c("tomato", "darkblue"),
+            labels = c("Casos", "Bombas"),
+            title = "Leyenda") %>%
+  addLayersControl(
+    overlayGroups = c("Casos", "pumps"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addSearchFeatures(
+    targetGroups = "pumps",
+    options = searchFeaturesOptions(
+      propertyName = "street",
+      zoom = 18,
+      openPopup = TRUE,
+      firstTipSubmit = TRUE,
+      autoCollapse = TRUE,
+      hideMarkerOnCollapse = TRUE
+    )
+  )
+
+
